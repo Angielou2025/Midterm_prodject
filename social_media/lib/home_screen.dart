@@ -55,6 +55,47 @@ class _HomeScreenState extends State<HomeScreen> {
   final Color modernPrimaryColor = const Color(0xFF6366F1); // Indigo
   final Color modernAccentColor = const Color(0xFF818CF8);  // Light Indigo
 
+  Future<int> _getGroupMemberCount(String groupName) async {
+    try {
+      // Naghahanap tayo sa lahat ng users_stats kung sino ang may following [groupName]
+      QuerySnapshot query = await FirebaseFirestore.instance
+          .collectionGroup('following') // collectionGroup para ma-search lahat ng subcollections
+          .where('groupName', isEqualTo: groupName)
+          .get();
+          
+      return query.docs.length;
+    } catch (e) {
+      print("Error counting members: $e");
+      return 0;
+    }
+  }
+
+  void _toggleJoinGroup(String groupName, bool isJoined) async {
+    try {
+      DocumentReference ref = FirebaseFirestore.instance
+          .collection('users_stats')
+          .doc(widget.user.username)
+          .collection('following')
+          .doc(groupName);
+
+      if (isJoined) {
+        // Leave group
+        await ref.delete();
+        _addNotification('${widget.user.username} left "$groupName" group!');
+      } else {
+        // Join group
+        await ref.set({
+          'type': 'group', 
+          'groupName': groupName, // ✅ ADD THIS
+          'joinedAt': FieldValue.serverTimestamp()
+        });
+        _addNotification('${widget.user.username} joined "$groupName" group!');
+      }
+    } catch (e) {
+      print("Error toggling group membership: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Kunin ang current theme (dark/light)
@@ -395,14 +436,14 @@ Widget _buildBottomNavigationBar(bool isDark) {
 
           final allPosts = snapshot.data!.docs;
 
-          // Filter posts: Show regular posts + group posts from joined groups
           final filteredPosts = allPosts.where((doc) {
-            var post = doc.data() as Map<String, dynamic>;
-            String? originGroup = post['originGroup'];
-            
-            // Show if regular post (no originGroup) OR group post from joined group
-            return originGroup == null || joinedGroups.contains(originGroup);
-          }).toList();
+  var post = doc.data() as Map<String, dynamic>;
+  String? originGroup = post['originGroup'];
+  
+  // Kung hindi group post, ipakita.
+  // Kung group post, ipakita lang kung ang group ay nasa joinedGroups list ng user.
+  return originGroup == null || joinedGroups.contains(originGroup);
+}).toList();
 
           if (filteredPosts.isEmpty) {
             return Center(
@@ -659,118 +700,103 @@ Widget _buildBottomNavigationBar(bool isDark) {
   }
 
   Widget _buildMediaWidget(String mediaUrl, bool isDark) {
-    // Check if it's a Facebook video URL
-    if (mediaUrl.contains('facebook.com') && mediaUrl.contains('/share/v/')) {
-      // Extract video ID from Facebook URL
-      String? videoId;
-      final regex = RegExp(r'/share/v/([^/?]+)');
-      final match = regex.firstMatch(mediaUrl);
-      if (match != null) {
-        videoId = match.group(1);
-      }
+  // Mas malawak na check para sa Facebook (Reels, Videos, at Mobile links)
+  bool isFacebook = mediaUrl.contains('facebook.com') || mediaUrl.contains('fb.watch');
 
-      if (videoId != null) {
-        return GestureDetector(
-          onTap: () async {
-            final Uri url = Uri.parse(mediaUrl);
-            if (await canLaunchUrl(url)) {
-              await launchUrl(url);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Could not open video')),
-              );
-            }
-          },
-          child: Container(
-            height: 300,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.black87 : Colors.grey[200],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.play_circle, size: 60, color: isDark ? Colors.white60 : Colors.black54),
-                const SizedBox(height: 10),
-                Text(
-                  'Facebook Video',
-                  style: TextStyle(
-                    color: isDark ? Colors.white70 : Colors.black87,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Tap to open in browser',
-                  style: TextStyle(
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    }
-
-    // For regular images and other media
-    print('DEBUG: Loading media URL: $mediaUrl'); // Debug line
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        mediaUrl,
+  if (isFacebook) {
+    return GestureDetector(
+      onTap: () async {
+        final Uri url = Uri.parse(mediaUrl);
+        if (await canLaunchUrl(url)) {
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Container(
+        height: 200,
         width: double.infinity,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            height: 200,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.black87 : Colors.grey[200],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          print('DEBUG: Image error: $error'); // Debug line
-          return Container(
-            height: 200,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.black87 : Colors.grey[200],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, size: 40, color: isDark ? Colors.white60 : Colors.black54),
-                const SizedBox(height: 8),
-                Text(
-                  'Media not available',
-                  style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'URL: ${mediaUrl.length > 30 ? mediaUrl.substring(0, 30) + '...' : mediaUrl}',
-                  style: TextStyle(
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+        decoration: BoxDecoration(
+          color: isDark ? Colors.black87 : Colors.grey[200],
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isDark ? Colors.white10 : Colors.grey[300]!),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.play_circle_filled, size: 50, color: primaryColor),
+            const SizedBox(height: 10),
+            const Text('Facebook Content', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text('Tap to view on Facebook', 
+                 style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600])),
+          ],
+        ),
       ),
     );
   }
+
+  // Kung hindi FB, itatrato natin bilang regular na Image
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(10),
+    child: Image.network(
+      mediaUrl,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          height: 150,
+          color: isDark ? Colors.black45 : Colors.grey[100],
+          child: const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+        );
+      },
+    ),
+  );
+}
+
+  Widget _buildGroupHeader(String groupName, List<String> joinedGroups) {
+  bool isJoined = joinedGroups.contains(groupName);
+
+  return Container(
+    padding: const EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: widget.isDarkMode ? Colors.grey[900] : Colors.grey[100],
+      borderRadius: BorderRadius.circular(15),
+    ),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(groupName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            
+            // DITO LALABAS ANG MEMBER COUNT
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collectionGroup('following')
+                  .where('groupName', isEqualTo: groupName) // Assuming 'groupName' is a field in document
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) return Text("Error", style: TextStyle(fontSize: 10));
+                
+                // Bilang ng docs = Bilang ng users na naka-join
+                int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                
+                return Text(
+                  "$count ${count == 1 ? 'Member' : 'Members'}",
+                  style: TextStyle(fontSize: 12, color: Colors.blueAccent),
+                );
+              },
+            ),
+          ],
+        ),
+        ElevatedButton(
+          onPressed: () => _toggleJoinGroup(groupName, isJoined),
+          style: ElevatedButton.styleFrom(backgroundColor: isJoined ? Colors.grey : primaryColor),
+          child: Text(isJoined ? 'Joined' : 'Join', style: const TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildGroupsPage() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -875,39 +901,24 @@ Widget _buildBottomNavigationBar(bool isDark) {
             ),
             SizedBox(height: isMobile ? 8 : 10),
             
-            // Dynamic Member Count
+            // Real-time Member Counter using StreamBuilder
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('users_stats')
-                  .where(FieldPath.documentId, isEqualTo: groupName)
+                  .collectionGroup('following') // Hahanapin lahat ng 'following' subcollections
+                  .where('groupName', isEqualTo: groupName) // Filter by Group Name
                   .snapshots(),
               builder: (context, snapshot) {
-                int memberCount = 0;
+                if (!snapshot.hasData) return Text(
+                  "0 Members", 
+                  style: TextStyle(
+                    fontSize: isMobile ? 14 : 15,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  )
+                );
                 
-                if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                  final groupDoc = snapshot.data!.docs.first;
-                  final followersRef = groupDoc.reference.collection('followers');
-                  
-                  return StreamBuilder<QuerySnapshot>(
-                    stream: followersRef.snapshots(),
-                    builder: (context, followersSnapshot) {
-                      memberCount = followersSnapshot.hasData 
-                          ? followersSnapshot.data!.docs.length 
-                          : 0;
-                      
-                      return Text(
-                        '$memberCount members',
-                        style: TextStyle(
-                          fontSize: isMobile ? 14 : 15,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
-                      );
-                    },
-                  );
-                }
-                
+                int count = snapshot.data!.docs.length;
                 return Text(
-                  '0 members',
+                  "$count ${count == 1 ? 'Member' : 'Members'}",
                   style: TextStyle(
                     fontSize: isMobile ? 14 : 15,
                     color: isDark ? Colors.white70 : Colors.black54,
@@ -2004,38 +2015,60 @@ Widget _buildBottomNavigationBar(bool isDark) {
   }
 
   void _showCreateGroupPostDialog(String groupName) {
-    final TextEditingController _descriptionController = TextEditingController();
-    final TextEditingController _mediaLinkController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Post to $groupName'),
-        content: Column(
+  final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _mediaLinkController = TextEditingController();
+  final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+      title: Text('Post to $groupName'),
+      content: SingleChildScrollView(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _mediaLinkController, decoration: const InputDecoration(labelText: 'Media Link')),
-            TextField(controller: _descriptionController, decoration: const InputDecoration(labelText: 'What is on your mind?')),
+            TextField(
+              controller: _mediaLinkController,
+              decoration: const InputDecoration(
+                labelText: 'Link (Image, Video, or Reel)', 
+                border: OutlineInputBorder()
+              ),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _descriptionController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Description', 
+                border: OutlineInputBorder()
+              ),
+            ),
           ],
         ),
-        actions: [
-          ElevatedButton(
-            onPressed: () async {
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(
+          onPressed: () async {
+            if (_descriptionController.text.isNotEmpty) {
               await FirebaseFirestore.instance.collection('posts').add({
                 'username': widget.user.username,
                 'description': _descriptionController.text,
-                'media': _mediaLinkController.text,
+                'media': _mediaLinkController.text.trim(), // Trim para iwas error sa spaces
                 'timestamp': FieldValue.serverTimestamp(),
-                'originGroup': groupName, // Dito natin malalaman kung saang group galing
+                'originGroup': groupName,
                 'likes': [],
                 'commentCount': 0,
               });
               Navigator.pop(context);
-            },
-            child: const Text('Post'),
-          ),
-        ],
-      ),
-    );
-  }
+            }
+          },
+          style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+          child: const Text('Post', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+}
 }
