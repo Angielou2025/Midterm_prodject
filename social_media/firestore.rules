@@ -1,0 +1,117 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- USER PROFILES ---
+    match /users/{userId} {
+      // Only owners can read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Only owners can create their profile
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Only owners can update their profile
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // All authenticated users can read profile pictures for home feed
+      allow read: if request.auth != null;
+    }
+    
+    // --- FOLLOW SYSTEM ---
+    match /users_stats/{username} {
+      // All authenticated users can read stats
+      allow read: if request.auth != null;
+      
+      // All authenticated users can create follow relationships
+      allow create: if request.auth != null;
+      
+      // All authenticated users can update stats
+      allow update: if request.auth != null;
+      
+      // All authenticated users can delete follow relationships
+      allow delete: if request.auth != null;
+      
+      // Followers subcollection
+      match /followers/{followerId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow delete: if request.auth != null;
+      }
+      
+      // Following subcollection (includes groups)
+      match /following/{followingId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow delete: if request.auth != null;
+      }
+    }
+    
+    // --- NOTIFICATIONS SYSTEM ---
+    match /users/{userId}/notifications/{notificationId} {
+      // Only owners can read their notifications
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Only owners can create notifications in their account
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Only owners can update notifications (mark as read)
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // Only owners can delete notifications
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // --- POSTS SYSTEM (Updated for Group Posts) ---
+    match /posts/{postId} {
+      // All authenticated users can read posts
+      allow read: if request.auth != null;
+      
+      // All authenticated users can create posts (including group posts with originGroup)
+      allow create: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+      
+      // All authenticated users can update posts (likes, comment count)
+      allow update: if request.auth != null;
+      
+      // Only owners can delete their posts
+      allow delete: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+    }
+    
+    // --- COMMENTS SYSTEM ---
+    match /posts/{postId}/comments/{commentId} {
+      // All authenticated users can read comments
+      allow read: if request.auth != null;
+      
+      // All authenticated users can create comments
+      allow create: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+      
+      // Only comment owners can update their comments
+      allow update: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+      
+      // Only comment owners can delete their comments
+      allow delete: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+    }
+    
+    // --- GROUP POSTS (Legacy - for backward compatibility) ---
+    match /group_posts/{postId} {
+      // All authenticated users can read group posts
+      allow read: if request.auth != null;
+      
+      // Only group members can create group posts
+      allow create: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0]
+        && exists(/databases/$(database)/documents/users_stats/$(request.auth.token.email.split('@')[0])/following/$(request.resource.data.groupName));
+      
+      // All authenticated users can update group posts (likes)
+      allow update: if request.auth != null;
+      
+      // Only post owners can delete their group posts
+      allow delete: if request.auth != null 
+        && request.resource.data.username == request.auth.token.email.split('@')[0];
+    }
+  }
+}

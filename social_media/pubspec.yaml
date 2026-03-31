@@ -1,0 +1,47 @@
+name: social_media
+description: "A new Flutter project with Firebase Auth and Glassmorphism UI."
+publish_to: 'none' # Hindi ito pwedeng i-publish sa pub.dev (private project)
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2 # Siguraduhin na ang Flutter version mo ay compatible dito
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- FIREBASE SECTION ---
+  # Ito ang kailangan para kumonekta ang app mo sa Firebase console
+  firebase_core: ^3.2.0
+
+  # Ito ang gagamitin natin para sa Login, Register, at Forgot Password logic
+  firebase_auth: ^5.1.2
+
+  # Ito ang database kung saan natin ise-save ang "Username" ng mga user
+  cloud_firestore: ^5.0.0
+
+  # --- UI SECTION ---
+  # Gagamitin natin ito para sa magagandang Error o Success pop-up dialogs
+  awesome_dialog: ^3.2.1
+
+  # Default icons para sa iOS style (pero pwede rin sa web/android)
+  cupertino_icons: ^1.0.8
+
+  # --- URL LAUNCHER ---
+  # Para mag-open ng Facebook videos sa browser
+  url_launcher: ^6.1.14
+
+dev_dependencies:
+  # Ginagamit lang ito habang nagde-develop (hindi kasama sa final app)
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0 # Nakakatulong para sumunod sa tamang coding standards
+
+flutter:
+  # Kailangan ito para gumana ang Material Design icons at widgets
+  uses-material-design: true
+
+  # Kung may gagamitin kang local images sa folder, i-uncomment (alisin ang #) ito:
+  assets:
+    - assets/images/anime_collage_bg.png
